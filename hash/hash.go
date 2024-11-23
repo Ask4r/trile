@@ -3,7 +3,7 @@ package hash
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"fmt"
+	"encoding/hex"
 	"time"
 )
 
@@ -16,9 +16,5 @@ func Now() [32]byte {
 
 func SNow() string {
 	h := Now()
-	s := ""
-	for i := range h {
-		s += fmt.Sprintf("%03d", h[i])
-	}
-	return s
+	return hex.EncodeToString(h[:])
 }
