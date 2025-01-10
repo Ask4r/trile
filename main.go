@@ -1,80 +1,86 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/ask4r/trile/bot"
-	"github.com/ask4r/trile/download"
+	"github.com/ask4r/trile/convert"
 	"github.com/ask4r/trile/hash"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
-	"github.com/tgulacsi/agostle/converter"
 )
 
-// const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-const PPTX_MIME = "application/vnd.ms-powerpoint;charset=UTF-8"
+const (
+	DATA_DIR = "data"
+)
 
-func getUrl(b *tgbotapi.BotAPI, d *tgbotapi.Document) (string, error) {
-	id := d.FileID
-	f, err := b.GetFile(tgbotapi.FileConfig{FileID: string(id)})
+var (
+	loConv *convert.LOConv
+)
+
+func handleError(b *bot.Bot, u *tgbotapi.Update, err error) {
+	chatId := u.Message.Chat.ID
+	text := fmt.Sprintf("Ooops...\n[Error] %q", err)
+	err = b.SendMsg(chatId, text)
 	if err != nil {
-		return "", err
+		log.Printf("Event your err handlers need handlers... err: %q", err)
+		return
 	}
-	return f.Link(b.Token), nil
-}
-
-func loadFile(url, ext string) (string, error) {
-	p := "data/" + hash.SNow() + ext
-	return p, download.ToFile(p, url)
-}
-
-func pptxToPdf(filename, dest string, ctx context.Context) error {
-	// converter.Converter
-	r, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-	return converter.OfficeToPdf(ctx, dest, r, PPTX_MIME)
-	// return converter.OfficeToPdf(ctx, dest, r, "pptx")
-}
-
-func stripExt(p string) string {
-	ext := path.Ext(p)
-	return p[:len(p)-len(ext)]
 }
 
 func handleUpdate(b *bot.Bot, u *tgbotapi.Update) {
 	m := u.Message
 	if m == nil {
+		log.Print("No message sent")
 		return
 	}
 	d := m.Document
 	if d == nil {
+		log.Print("No document sent")
 		return
 	}
+	chatId := m.Chat.ID
 
-	url, err := getUrl(b.Bot, d)
-	if err != nil {
+	fn := DATA_DIR + "/" + hash.SNow()
+	ext := path.Ext(d.FileName)
+	if ext == ".pdf" {
+		b.SendMsg(chatId, "Cannot convert PDF to PDF")
 		return
 	}
-	filename, err := loadFile(url, ".pptx")
-	if err != nil {
-		return
-	}
+	destext := ".pdf"
+	srcfn := fn + ext
+	destfn := fn + destext
+	targetfn := strings.TrimSuffix(d.FileName, ext) + destext
 
-	name := d.FileName
-	dest := "parsed/" + stripExt(name) + ".pdf"
-	fmt.Printf("parsing `%s` to `%s`\n", filename, dest)
-	err = pptxToPdf(filename, dest, b.Ctx)
+	err := b.FetchDoc(d, srcfn)
 	if err != nil {
+		log.Print("Could not fetch document")
+		handleError(b, u, err)
 		return
 	}
+	defer os.Remove(srcfn)
 
-	fmt.Printf("file `%s` converted to `%s`\n", name, dest)
+	if loConv == nil {
+		log.Panic("No running LO instance. Fatal")
+	}
+	err = loConv.OfficeToPdf(srcfn, DATA_DIR)
+	if err != nil {
+		log.Printf("Could not parse document, err: %q", err)
+		handleError(b, u, err)
+		return
+	}
+	defer os.Remove(destfn)
+
+	err = b.SendFile(chatId, destfn, targetfn)
+	if err != nil {
+		log.Printf("Could not send file, err: %q", err)
+		handleError(b, u, err)
+		return
+	}
 }
 
 func main() {
@@ -82,10 +88,15 @@ func main() {
 	if err != nil {
 		log.Panic("Cannot read .env")
 	}
-
 	APIKey := os.Getenv("BOT_API_KEY")
 
-	b := bot.New(APIKey)
+	loConv = convert.New()
+	if loConv == nil {
+		log.Panic("No running LO instance. Fatal")
+	}
+	defer loConv.Shutdown()
+	log.Printf("LO started successfully")
 
+	b := bot.New(APIKey)
 	b.Handle(handleUpdate)
 }

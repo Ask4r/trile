@@ -17,9 +17,8 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
-# data and parsed directories
+# data directory
 data
-parsed
 
 # Go workspace file
 go.work
