@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"os"
 	"path"
 	"strings"
@@ -11,73 +12,83 @@ import (
 	"github.com/ask4r/trile/hash"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
-	"github.com/pkg/errors"
 )
 
 const (
 	DATA_DIR = "data"
+	LOG_FILE = ".local/state/trile/logs/trile.log"
 )
 
-func handleUpdate(b *bot.Bot, lo *convert.LOConv, u *tgbotapi.Update) error {
+func cleanupFile(fn string) {
+	err := os.Remove(fn)
+	if err != nil {
+		slog.Error("could not cleanup file", "error", err, "file", fn)
+	}
+}
+
+func handleUpdate(b *bot.Bot, lo *convert.LOConv, u *tgbotapi.Update) {
 	// Get message data
 	m := u.Message
 	if m == nil {
-		return errors.New("no message received")
-	}
-	d := m.Document
-	if d == nil {
-		return errors.New("no document received")
+		slog.Info("no message received", "update", u)
+		return
 	}
 	chatId := m.Chat.ID
-
-	// Get temporary filenames
-	fn := DATA_DIR + "/" + hash.NowString()
-	ext := path.Ext(d.FileName)
-	if ext == ".pdf" {
-		err := b.SendMsg(chatId, "Cannot convert PDF to PDF")
-		return err
+	d := m.Document
+	if d == nil {
+		slog.Info("no document received", "chatId", chatId)
+		return
 	}
+
+	// Temporary filenames
+	basefn := DATA_DIR + "/" + hash.NowString()
+	ext := path.Ext(d.FileName)
 	destext := ".pdf"
-	srcfn := fn + ext
-	destfn := fn + destext
+	if ext == destext {
+		slog.Info("tried to convert wrong file extension", "fromExt", ext, "toExt", destext)
+		err := b.SendMsg(chatId, "Cannot convert PDF to PDF")
+		if err != nil {
+			slog.Error("could not send message", "error", err, "chatId", chatId)
+			return
+		}
+		return
+	}
+	srcfn := basefn + ext
+	destfn := basefn + destext // expected out filename
 	docname := strings.TrimSuffix(d.FileName, ext) + destext
 
 	// Fetch document
 	err := b.FetchDoc(d, srcfn)
 	if err != nil {
-		return err
+		slog.Error("could not fetch document", "error", err, "document", d, "chatId", chatId)
+		return
 	}
-	defer func() {
-		err := os.Remove(srcfn)
-		if err != nil {
-			log.Printf("could not cleanup file: \"%s\"", srcfn)
-		}
-	}()
+	defer cleanupFile(srcfn)
 
 	// Convert document
 	err = lo.OfficeToPdf(srcfn, DATA_DIR)
 	if err != nil {
-		return err
+		slog.Error("could not convert file", "error", err, "file", srcfn)
+		return
 	}
-	defer func() {
-		err := os.Remove(destfn)
-		if err != nil {
-			log.Printf("could not cleanup file: \"%s\"", destfn)
-		}
-	}()
+	defer cleanupFile(destfn)
 
 	// Send document back
 	err = b.SendFile(chatId, destfn, docname)
 	if err != nil {
-		return errors.Wrap(err, "could not send file")
+		slog.Error("could not send file", "error", err, "file", destfn, "chatId", chatId)
+		return
 	}
 
-	return nil
+	slog.Info("successfully converted document", "document", d, "chatId", chatId)
+	return
 }
 
 func main() {
+	var err error
+
 	// Retrieve Env data
-	err := godotenv.Load()
+	err = godotenv.Load()
 	if err != nil {
 		log.Panicf("cannot read .env: %v", err)
 	}
@@ -86,8 +97,29 @@ func main() {
 		log.Panic("cannot retrieve environment variable \"BOT_API_KEY\"")
 	}
 
+	// Init logger
+	homedir, err := os.UserHomeDir()
+	if err != nil {
+		log.Panicf("cannot use log file: cannot retrieve HOME dir: %v", err)
+	}
+	logfn := path.Join(homedir, LOG_FILE)
+	logf, err := os.OpenFile(logfn, os.O_RDWR, 0o666)
+	if err != nil {
+		log.Panicf("could not acess log file: %v", err)
+	}
+	defer func() {
+		err := logf.Close()
+		if err != nil {
+			log.Printf("could not close log file: %v", err)
+		}
+	}()
+	log.Printf("logs will be stored in \"%s\"", logfn)
+	logger := slog.New(slog.NewJSONHandler(logf,
+		&slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+
 	// Start LO instance
-	log.Print("starting new LibreOffice instance")
+	slog.Info("starting new LibreOffice instance")
 	lo, err := convert.New()
 	if err != nil {
 		log.Panicf("could not start LO: %v", err)
@@ -106,21 +138,10 @@ func main() {
 		log.Panicf("cound not create bot: %v", err)
 	}
 	bname := b.API.Self.UserName
-	log.Printf("Authorized on account @%s \"https://t.me/%s\"", bname, bname)
+	log.Printf("authorized on account @%s \"https://t.me/%s\"", bname, bname)
 
 	// Handle Bot updates
-	chMsgErr := make(chan error)
-	go func() {
-		for err := range chMsgErr {
-			log.Printf("message handler error: %v", err)
-		}
-	}()
 	b.Handle(func(u *tgbotapi.Update) {
-		go func() {
-			err := handleUpdate(b, lo, u)
-			if err != nil {
-				chMsgErr <- err
-			}
-		}()
+		go handleUpdate(b, lo, u)
 	})
 }
