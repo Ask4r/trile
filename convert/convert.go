@@ -73,12 +73,12 @@ func (lo *LOConv) OfficeToPdf(fn, outdir string) error {
 		"--convert-to", "pdf", fn,
 		"--outdir", outdir,
 		"-env:UserInstallation=file://"+loIsolatedEnvFile)
-	// err := cmd.Start()
+	// err = cmd.Start()
 	err = cmd.Run()
 	if err != nil {
 		return errors.Wrap(err, "could not run conversion")
 	}
-	// go cmd.Wait()
+	// cmd.Wait()
 
 	return nil
 }
