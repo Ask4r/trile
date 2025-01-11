@@ -1,11 +1,8 @@
 package bot
 
 import (
-	"io"
-	"log"
-	"os"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/pkg/errors"
 )
 
 type Bot struct {
@@ -13,55 +10,22 @@ type Bot struct {
 	ch  tgbotapi.UpdatesChannel
 }
 
-func New(token string) *Bot {
+func New(token string) (*Bot, error) {
 	api, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
-		log.Panic(err)
+		return nil, errors.Wrap(err, "could not authorize bot")
 	}
-	bname := api.Self.UserName
-	log.Printf("Authorized on account @%s \"https://t.me/%s\"", bname, bname)
-
 	api.Debug = false
 
 	cfg := tgbotapi.NewUpdate(0)
 	cfg.Timeout = 60
-
 	ch := api.GetUpdatesChan(cfg)
 
-	return &Bot{API: api, ch: ch}
+	return &Bot{API: api, ch: ch}, nil
 }
 
-func (b *Bot) Handle(handle func(b *Bot, u *tgbotapi.Update)) {
+func (b *Bot) Handle(handle func(u *tgbotapi.Update)) {
 	for u := range b.ch {
-		handle(b, &u)
+		handle(&u)
 	}
-}
-
-func (b *Bot) SendMsg(chatId int64, text string) error {
-	msg := tgbotapi.NewMessage(chatId, text)
-	_, err := b.API.Send(msg)
-	return err
-}
-
-func (b *Bot) SendFile(chatId int64, docfn, docname string) error {
-	docr, err := os.Open(docfn)
-	if err != nil {
-		return err
-	}
-	defer docr.Close()
-
-	docbytes, err := io.ReadAll(docr)
-	if err != nil {
-		log.Printf("Could not read file \"%s\"", docfn)
-		return err
-	}
-	doc := tgbotapi.FileBytes{
-		Name:  docname,
-		Bytes: docbytes,
-	}
-
-	msg := tgbotapi.NewDocument(chatId, doc)
-	_, err = b.API.Send(msg)
-
-	return err
 }

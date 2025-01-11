@@ -14,7 +14,7 @@ func Now() [32]byte {
 	return sha256.Sum256(b)
 }
 
-func SNow() string {
+func NowString() string {
 	h := Now()
 	return hex.EncodeToString(h[:])
 }

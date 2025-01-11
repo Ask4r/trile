@@ -1,10 +1,10 @@
 package convert
 
 import (
-	"errors"
-	"log"
 	"os/exec"
 	"strconv"
+
+	"github.com/pkg/errors"
 )
 
 const (
@@ -18,67 +18,65 @@ type LOConv struct {
 	pid int // -1 if no instance is running yet
 }
 
+func (lo *LOConv) checkInstance() error {
+	if lo.pid == -1 {
+		return errors.New("no running LibreOffice instance")
+	}
+	return nil
+}
+
 // Starts background LibreOffice (LO) instance.
 // Run in before using any other LO jobs, so they
 // are sent to single background instance to avoid
 // startup/shutdown penalty for speed (primary) and
 // safety (secondary) purposes.
 // Return Pid of started instance
-func New() *LOConv {
-	log.Printf("Starting LibreOffice background instance...")
-	cmd := exec.Command(
-		loExec,
+func New() (*LOConv, error) {
+	cmd := exec.Command(loExec,
 		"--nodefault",
 		"--headless",
 		"--norestore",
 		"--nocrashreport",
 		"--accept="+loAcceptStr,
-		"-env:UserInstallation=file://"+loIsolatedEnvFile,
-	)
+		"-env:UserInstallation=file://"+loIsolatedEnvFile)
 	err := cmd.Start()
 	if err != nil {
-		log.Printf("Could not start LibreOffice")
-		return nil
+		return nil, errors.Wrap(err, "cound not run LibreOffice instance")
 	}
+
 	pid := cmd.Process.Pid
-	return &LOConv{pid: pid}
+	return &LOConv{pid: pid}, nil
 }
 
 func (lo *LOConv) Shutdown() error {
-	if lo.pid == -1 {
-		return errors.New("No running instance exists")
-	}
-
-	log.Printf("Shutting down LO...")
-	cmd := exec.Command("kill", "-9", strconv.Itoa(lo.pid))
-	err := cmd.Run()
+	err := lo.checkInstance()
 	if err != nil {
-		log.Printf("Could not shutdown LO instance")
-		return err
+		return errors.Wrap(err, "cannot shutdown LO")
 	}
-
+	cmd := exec.Command("kill", "-9", strconv.Itoa(lo.pid))
+	err = cmd.Run()
+	if err != nil {
+		return errors.Wrap(err, "cound not shutdown LO")
+	}
 	lo.pid = -1
-
 	return nil
 }
 
 // Converts LO-supported file to PDF
-func (lo *LOConv) OfficeToPdf(srcfn, outdir string) error {
-	if lo.pid == -1 {
-		return errors.New("No running instance exists")
+func (lo *LOConv) OfficeToPdf(fn, outdir string) error {
+	err := lo.checkInstance()
+	if err != nil {
+		return errors.Wrap(err, "cannot convert file")
 	}
 
-	cmd := exec.Command(
-		loExec,
-		"--convert-to", "pdf", srcfn,
+	cmd := exec.Command(loExec,
+		"--convert-to", "pdf", fn,
 		"--outdir", outdir,
-		"-env:UserInstallation=file://"+loIsolatedEnvFile,
-	)
+		"-env:UserInstallation=file://"+loIsolatedEnvFile)
 	// err := cmd.Start()
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
-		log.Printf("Could not run LO job")
-		return err
+		return errors.Wrap(err, "could not run conversion")
 	}
 	// go cmd.Wait()
 
