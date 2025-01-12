@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	loExec = "/usr/bin/soffice"
-	// loAcceptStr       = "socket,host=127.0.0.1,port=2003;urp;"
+	// loAcceptStr    = "socket,host=127.0.0.1,port=2003;urp;"
+	loExec            = "/usr/bin/soffice"
 	loIsolatedEnvFile = "/tmp/LibreOffice_Conversion_TrileBot"
 	loAcceptStr       = "socket,host=127.0.0.1,port=2003,tcpNoDelay=1;urp;StarOffice.ComponentContext"
 )
@@ -26,11 +26,10 @@ func (lo *LOConv) checkInstance() error {
 }
 
 // Starts background LibreOffice (LO) instance.
-// Run in before using any other LO jobs, so they
+// Run it before using any other LO jobs, so they
 // are sent to single background instance to avoid
 // startup/shutdown penalty for speed (primary) and
-// safety (secondary) purposes.
-// Return Pid of started instance
+// safety (secondary) purposes
 func New() (*LOConv, error) {
 	cmd := exec.Command(loExec,
 		"--nodefault",

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"path"
@@ -22,6 +21,7 @@ const (
 )
 
 func handleUpdate(b *bot.Bot, lo *convert.LOConv, u *tgbotapi.Update) {
+	// fmt.Printf("Incoming message: %+v\n", u.Message)
 	// Get message data
 	m := u.Message
 	if m == nil {
@@ -85,22 +85,26 @@ func main() {
 	// Retrieve Env data
 	err = godotenv.Load()
 	if err != nil {
-		log.Panicf("cannot read .env: %v", err)
+		fmt.Printf("Cannot read .env: %v\n", err)
+		return
 	}
 	apiKey := os.Getenv("BOT_API_KEY")
 	if apiKey == "" {
-		log.Panic("cannot retrieve environment variable \"BOT_API_KEY\"")
+		fmt.Print("Cannot retrieve environment variable \"BOT_API_KEY\"\n")
+		return
 	}
 
 	// Init logger
 	homedir, err := os.UserHomeDir()
 	if err != nil {
-		log.Panicf("cannot use log file: cannot retrieve HOME dir: %v", err)
+		fmt.Printf("Cannot use log file: cannot retrieve HOME dir: %v\n", err)
+		return
 	}
 	logfn := path.Join(homedir, LOG_FILE)
-	logf, err := os.OpenFile(logfn, os.O_RDWR, 0o666)
+	logf, err := os.OpenFile(logfn, os.O_RDWR|os.O_APPEND, 0o666)
 	if err != nil {
-		log.Panicf("could not acess log file: %v", err)
+		fmt.Printf("Could not acess log file: %v\n", err)
+		return
 	}
 	defer utils.CloseRC(logf)
 	fmt.Printf("Logs will be stored in \"%s\"\n", logfn)
@@ -111,18 +115,20 @@ func main() {
 	// Start LO instance
 	lo, err := convert.New()
 	if err != nil {
-		log.Panicf("could not start LO: %v", err)
+		fmt.Printf("Could not start LO: %v\n", err)
+		return
 	}
 	defer func() {
 		if err := lo.Shutdown(); err != nil {
-			log.Panicf("could not shutdown LO: %v", err)
+			fmt.Printf("Could not shutdown LO: %v\n", err)
+			return
 		}
 	}()
 
 	// Connect to Bot API
 	b, err := bot.New(apiKey)
 	if err != nil {
-		log.Panicf("cound not create bot: %v", err)
+		fmt.Printf("Could not create bot: %v\n", err)
 	}
 	bname := b.API.Self.UserName
 	fmt.Printf("Authorized on account @%s \"https://t.me/%s\"\n", bname, bname)
