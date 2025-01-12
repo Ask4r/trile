@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -18,4 +19,9 @@ func RemoveFile(fn string) {
 	if err != nil {
 		slog.Error("could not remove file", "error", err, "file", fn)
 	}
+}
+
+func PathExist(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
 }

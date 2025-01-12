@@ -62,14 +62,14 @@ func (lo *LOConv) Shutdown() error {
 }
 
 // Converts LO-supported file to PDF
-func (lo *LOConv) OfficeToPdf(fn, outdir string) error {
+func (lo *LOConv) OfficeToExt(fn, outdir, ext string) error {
 	err := lo.checkInstance()
 	if err != nil {
 		return errors.Wrap(err, "cannot convert file")
 	}
 
 	cmd := exec.Command(loExec,
-		"--convert-to", "pdf", fn,
+		"--convert-to", mapExt(ext), fn,
 		"--outdir", outdir,
 		"-env:UserInstallation=file://"+loIsolatedEnvFile)
 	// err = cmd.Start()
@@ -80,4 +80,13 @@ func (lo *LOConv) OfficeToPdf(fn, outdir string) error {
 	// cmd.Wait()
 
 	return nil
+}
+
+func mapExt(ext string) string {
+	switch ext {
+	case "txt":
+		return "txt:text"
+	default:
+		return ext
+	}
 }

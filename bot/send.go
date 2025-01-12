@@ -18,6 +18,12 @@ func (b *Bot) SendText(chatId int64, text string) error {
 	return b.Send(msg)
 }
 
+func (b *Bot) SendMarkdown(chatId int64, text string) error {
+	msg := tgbotapi.NewMessage(chatId, text)
+	msg.ParseMode = tgbotapi.ModeMarkdownV2
+	return b.Send(msg)
+}
+
 func (b *Bot) ReplyText(chatId int64, msgId int, text string) error {
 	msg := tgbotapi.NewMessage(chatId, text)
 	msg.ReplyToMessageID = msgId

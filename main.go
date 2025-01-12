@@ -20,51 +20,93 @@ const (
 	LOG_FILE = ".local/state/trile/logs/trile.log"
 )
 
+func ReplyText(b *bot.Bot, chatId int64, msgId int, text string) {
+	err := b.ReplyText(chatId, msgId, text)
+	if err != nil {
+		slog.Error("could not send message", "error", err, "chatId", chatId)
+	}
+
+}
+
+func sendStartMsg(b *bot.Bot, chatId int64) {
+	startMessage := "Hi, I'm *Trile*\\!\n\nI can convert some document types\\! " +
+		"Try sending me `.pptx`, `.docx`, `.xlsx` or any other document and I will convert it to `.pdf`\\. " +
+		"You can also specify target file extensions with commands like /pdf and I'll try to convert them too\\!\n\n" +
+		"Or you can reply to other's messages with documents and choose target file types with commands\\!"
+	err := b.SendMarkdown(chatId, startMessage)
+	if err != nil {
+		slog.Error("could not send message", "error", err, "chatId", chatId)
+	}
+}
+
 func handleUpdate(b *bot.Bot, lo *convert.LOConv, u *tgbotapi.Update) {
-	// fmt.Printf("Incoming message: %+v\n", u.Message)
 	// Get message data
 	m := u.Message
 	if m == nil {
 		slog.Info("no message received", "update", u)
 		return
 	}
-	chatId := m.Chat.ID
 	slog.Debug("new message", "message", m)
+	chatId := m.Chat.ID
+	cmd := b.GetMsgCommand(m)
+	if cmd == "/start" {
+		sendStartMsg(b, chatId)
+	}
 	d := m.Document
 	if d == nil {
-		slog.Info("no document received", "chatId", chatId)
-		return
+		repMsg := m.ReplyToMessage
+		if repMsg != nil && repMsg.Document != nil {
+			d = repMsg.Document
+		} else {
+			slog.Info("no document received", "chatId", chatId)
+			return
+		}
 	}
 
 	// Temporary filenames
 	basefn := DATA_DIR + "/" + hash.NowString()
-	ext := path.Ext(d.FileName)
-	destext := ".pdf"
-	if ext == destext {
-		slog.Info("tried to convert wrong file extension", "fromExt", ext, "toExt", destext)
-		err := b.ReplyText(chatId, m.MessageID, "Cannot convert PDF to PDF")
-		if err != nil {
-			slog.Error("could not send message", "error", err, "chatId", chatId)
-		}
+	var target string
+	if cmd == "" {
+		target = "pdf"
+	} else {
+		target = strings.TrimPrefix(cmd, "/")
+	}
+	srcext := path.Ext(d.FileName)
+	destext := "." + target
+	if srcext == destext {
+		slog.Info("tried to convert to same file extension", "fromExt", srcext, "toExt", destext)
+		reply := fmt.Sprintf("That's %s to %s...", srcext, destext)
+		ReplyText(b, chatId, m.MessageID, reply)
 		return
 	}
-	srcfn := basefn + ext
+	srcfn := basefn + srcext
 	destfn := basefn + destext // expected out filename
-	docname := strings.TrimSuffix(d.FileName, ext) + destext
+	docname := strings.TrimSuffix(d.FileName, srcext) + destext
 
 	// Fetch document
 	err := b.FetchDoc(d, srcfn)
 	if err != nil {
 		slog.Error("could not fetch document", "error", err, "document", d, "chatId", chatId)
+		reply := fmt.Sprintf("Could not fetch %s. Sorry!", d.FileName)
+		ReplyText(b, chatId, m.MessageID, reply)
 		return
 	}
 	defer utils.RemoveFile(srcfn)
 
 	// Convert document
-	err = lo.OfficeToPdf(srcfn, DATA_DIR)
+	err = lo.OfficeToExt(srcfn, DATA_DIR, target)
 	if err != nil {
 		slog.Error("could not convert file", "error", err, "file", srcfn)
+		reply := "Something definetly went wrong. I did my best. It doesn't work. Trust me."
+		ReplyText(b, chatId, m.MessageID, reply)
 		return
+	}
+	if utils.PathExist(destfn) {
+		slog.Error("impossible conversion", "fromExt", srcext, "toExt", destext, "file", srcfn)
+		reply := fmt.Sprintf("Cannot convert %s to %s. That's witchery!", srcext, destext)
+		ReplyText(b, chatId, m.MessageID, reply)
+		return
+
 	}
 	defer utils.RemoveFile(destfn)
 
@@ -72,6 +114,8 @@ func handleUpdate(b *bot.Bot, lo *convert.LOConv, u *tgbotapi.Update) {
 	err = b.ReplyFile(chatId, m.MessageID, destfn, docname)
 	if err != nil {
 		slog.Error("could not send file", "error", err, "file", destfn, "chatId", chatId)
+		reply := "No, seriously... I converted the doc, it was ready, everything was good, but it didn't sent! What!?"
+		ReplyText(b, chatId, m.MessageID, reply)
 		return
 	}
 
@@ -101,7 +145,7 @@ func main() {
 		return
 	}
 	logfn := path.Join(homedir, LOG_FILE)
-	logf, err := os.OpenFile(logfn, os.O_RDWR|os.O_APPEND, 0o666)
+	logf, err := os.OpenFile(logfn, os.O_WRONLY|os.O_APPEND, 0o666)
 	if err != nil {
 		fmt.Printf("Could not acess log file: %v\n", err)
 		return

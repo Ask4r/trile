@@ -29,3 +29,24 @@ func (b *Bot) Handle(handle func(u *tgbotapi.Update)) {
 		handle(&u)
 	}
 }
+
+func (b *Bot) GetMsgCommand(m *tgbotapi.Message) string {
+	var text string
+	var ents []tgbotapi.MessageEntity
+	if m.Text != "" {
+		text = m.Text
+		ents = m.Entities
+	} else if m.Caption != "" {
+		text = m.Caption
+		ents = m.CaptionEntities
+	} else {
+		return ""
+	}
+
+	for _, e := range ents {
+		if e.Type == "bot_command" {
+			return text[e.Offset : e.Offset+e.Length]
+		}
+	}
+	return ""
+}
