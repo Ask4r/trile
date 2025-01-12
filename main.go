@@ -31,7 +31,7 @@ func ReplyText(b *bot.Bot, chatId int64, msgId int, text string) {
 func sendStartMsg(b *bot.Bot, chatId int64) {
 	startMessage := "Hi, I'm *Trile*\\!\n\nI can convert some document types\\! " +
 		"Try sending me `.pptx`, `.docx`, `.xlsx` or any other document and I will convert it to `.pdf`\\. " +
-		"You can also specify target file extensions with commands like /pdf and I'll try to convert them too\\!\n\n" +
+		"You can also specify other target file extensions with commands like /pdf and I'll try to convert them too\\!\n\n" +
 		"Or you can reply to other's messages with documents and choose target file types with commands\\!"
 	err := b.SendMarkdown(chatId, startMessage)
 	if err != nil {
