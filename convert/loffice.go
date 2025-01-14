@@ -61,7 +61,6 @@ func (lo *LOConv) Shutdown() error {
 	return nil
 }
 
-// Converts LO-supported file to PDF
 func (lo *LOConv) OfficeToExt(fn, outdir, ext string) error {
 	err := lo.checkInstance()
 	if err != nil {

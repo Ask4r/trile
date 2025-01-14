@@ -20,6 +20,13 @@ const (
 	LOG_FILE = ".local/state/trile/logs/trile.log"
 )
 
+type ConvUpdate struct {
+	FN      string
+	DestExt string
+	Doc     *tgbotapi.Document
+	Msg     *tgbotapi.Message
+}
+
 func ReplyText(b *bot.Bot, chatId int64, msgId int, text string) {
 	err := b.ReplyText(chatId, msgId, text)
 	if err != nil {
@@ -39,7 +46,7 @@ func sendStartMsg(b *bot.Bot, chatId int64) {
 	}
 }
 
-func handleUpdate(b *bot.Bot, lo *convert.LOConv, u *tgbotapi.Update) {
+func handleUpdate(b *bot.Bot, convCh chan ConvUpdate, u *tgbotapi.Update) {
 	// Get message data
 	m := u.Message
 	if m == nil {
@@ -51,6 +58,7 @@ func handleUpdate(b *bot.Bot, lo *convert.LOConv, u *tgbotapi.Update) {
 	cmd := b.GetMsgCommand(m)
 	if cmd == "/start" {
 		sendStartMsg(b, chatId)
+		return
 	}
 	d := m.Document
 	if d == nil {
@@ -63,64 +71,70 @@ func handleUpdate(b *bot.Bot, lo *convert.LOConv, u *tgbotapi.Update) {
 		}
 	}
 
-	// Temporary filenames
-	basefn := DATA_DIR + "/" + hash.NowString()
-	var target string
-	if cmd == "" {
-		target = "pdf"
-	} else {
-		target = strings.TrimPrefix(cmd, "/")
-	}
+	// Path and extensions
 	srcext := path.Ext(d.FileName)
-	destext := "." + target
+	var destext string
+	if cmd == "" {
+		destext = ".pdf"
+	} else {
+		destext = "." + strings.TrimPrefix(cmd, "/")
+	}
 	if srcext == destext {
 		slog.Info("tried to convert to same file extension", "fromExt", srcext, "toExt", destext)
 		reply := fmt.Sprintf("That's %s to %s...", srcext, destext)
 		ReplyText(b, chatId, m.MessageID, reply)
 		return
 	}
-	srcfn := basefn + srcext
-	destfn := basefn + destext // expected out filename
-	docname := strings.TrimSuffix(d.FileName, srcext) + destext
+	fn := DATA_DIR + "/" + hash.NowString() + srcext
 
 	// Fetch document
-	err := b.FetchDoc(d, srcfn)
+	err := b.FetchDoc(d, fn)
 	if err != nil {
 		slog.Error("could not fetch document", "error", err, "document", d, "chatId", chatId)
 		reply := fmt.Sprintf("Could not fetch %s. Sorry!", d.FileName)
 		ReplyText(b, chatId, m.MessageID, reply)
 		return
 	}
+
+	convCh <- ConvUpdate{FN: fn, DestExt: destext, Doc: d, Msg: m}
+}
+
+func handleConvert(b *bot.Bot, lo *convert.LOConv, conv *ConvUpdate) {
+	chatId := conv.Msg.Chat.ID
+	msgId := conv.Msg.MessageID
+	srcext := path.Ext(conv.FN)
+	srcfn := conv.FN
+	destfn := strings.TrimSuffix(conv.FN, srcext) + conv.DestExt
+	destDocName := strings.TrimSuffix(conv.Doc.FileName, srcext) + conv.DestExt
 	defer utils.RemoveFile(srcfn)
 
 	// Convert document
-	err = lo.OfficeToExt(srcfn, DATA_DIR, target)
+	loTarget := strings.TrimPrefix(conv.DestExt, ".")
+	err := lo.OfficeToExt(srcfn, DATA_DIR, loTarget)
 	if err != nil {
 		slog.Error("could not convert file", "error", err, "file", srcfn)
 		reply := "Something definetly went wrong. I did my best. It doesn't work. Trust me."
-		ReplyText(b, chatId, m.MessageID, reply)
+		ReplyText(b, chatId, msgId, reply)
 		return
 	}
-	if utils.PathExist(destfn) {
-		slog.Error("impossible conversion", "fromExt", srcext, "toExt", destext, "file", srcfn)
-		reply := fmt.Sprintf("Cannot convert %s to %s. That's witchery!", srcext, destext)
-		ReplyText(b, chatId, m.MessageID, reply)
+	if !utils.PathExist(destfn) {
+		slog.Error("impossible conversion", "fromExt", srcext, "toExt", conv.DestExt, "file", srcfn)
+		reply := fmt.Sprintf("Cannot convert %s to %s. That's witchery!", srcext, conv.DestExt)
+		ReplyText(b, chatId, msgId, reply)
 		return
-
 	}
 	defer utils.RemoveFile(destfn)
 
 	// Send document back
-	err = b.ReplyFile(chatId, m.MessageID, destfn, docname)
+	err = b.ReplyFile(chatId, msgId, destfn, destDocName)
 	if err != nil {
 		slog.Error("could not send file", "error", err, "file", destfn, "chatId", chatId)
 		reply := "No, seriously... I converted the doc, it was ready, everything was good, but it didn't sent! What!?"
-		ReplyText(b, chatId, m.MessageID, reply)
+		ReplyText(b, chatId, msgId, reply)
 		return
 	}
 
-	slog.Info("successfully converted document", "document", d, "chatId", chatId)
-	return
+	slog.Info("successfully converted document", "document", conv.Doc, "chatId", chatId)
 }
 
 func main() {
@@ -165,7 +179,6 @@ func main() {
 	defer func() {
 		if err := lo.Shutdown(); err != nil {
 			fmt.Printf("Could not shutdown LO: %v\n", err)
-			return
 		}
 	}()
 
@@ -177,8 +190,15 @@ func main() {
 	bname := b.API.Self.UserName
 	fmt.Printf("Authorized on account @%s \"https://t.me/%s\"\n", bname, bname)
 
-	// Handle Bot updates
+	// Handle updates
+	convCh := make(chan ConvUpdate)
+	go func() {
+		// LO can only work syncronously
+		for u := range convCh {
+			handleConvert(b, lo, &u)
+		}
+	}()
 	b.Handle(func(u *tgbotapi.Update) {
-		go handleUpdate(b, lo, u)
+		go handleUpdate(b, convCh, u)
 	})
 }
