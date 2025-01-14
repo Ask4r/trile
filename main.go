@@ -20,9 +20,16 @@ const (
 	LOG_FILE = ".local/state/trile/logs/trile.log"
 )
 
-type ConvUpdate struct {
+type ConvertUpdate struct {
 	FN      string
 	DestExt string
+	Doc     *tgbotapi.Document
+	Msg     *tgbotapi.Message
+}
+
+type RespondUpdate struct {
+	FN      string
+	DocName string
 	Doc     *tgbotapi.Document
 	Msg     *tgbotapi.Message
 }
@@ -46,7 +53,7 @@ func sendStartMsg(b *bot.Bot, chatId int64) {
 	}
 }
 
-func handleUpdate(b *bot.Bot, convCh chan ConvUpdate, u *tgbotapi.Update) {
+func handleUpdate(b *bot.Bot, convCh chan ConvertUpdate, u *tgbotapi.Update) {
 	// Get message data
 	m := u.Message
 	if m == nil {
@@ -96,45 +103,59 @@ func handleUpdate(b *bot.Bot, convCh chan ConvUpdate, u *tgbotapi.Update) {
 		return
 	}
 
-	convCh <- ConvUpdate{FN: fn, DestExt: destext, Doc: d, Msg: m}
+	// Pass to conversion
+	convCh <- ConvertUpdate{FN: fn, DestExt: destext, Doc: d, Msg: m}
 }
 
-func handleConvert(b *bot.Bot, lo *convert.LOConv, conv *ConvUpdate) {
-	chatId := conv.Msg.Chat.ID
-	msgId := conv.Msg.MessageID
-	srcext := path.Ext(conv.FN)
-	srcfn := conv.FN
-	destfn := strings.TrimSuffix(conv.FN, srcext) + conv.DestExt
-	destDocName := strings.TrimSuffix(conv.Doc.FileName, srcext) + conv.DestExt
+// This handler is a BOTTLENECK
+func handleConvert(b *bot.Bot, lo *convert.LOConv, respCh chan RespondUpdate, u *ConvertUpdate) {
+	chatId := u.Msg.Chat.ID
+	msgId := u.Msg.MessageID
+	srcext := path.Ext(u.FN)
+	srcfn := u.FN
+	destfn := strings.TrimSuffix(u.FN, srcext) + u.DestExt
+
 	defer utils.RemoveFile(srcfn)
 
 	// Convert document
-	loTarget := strings.TrimPrefix(conv.DestExt, ".")
+	loTarget := strings.TrimPrefix(u.DestExt, ".")
 	err := lo.OfficeToExt(srcfn, DATA_DIR, loTarget)
 	if err != nil {
 		slog.Error("could not convert file", "error", err, "file", srcfn)
 		reply := "Something definetly went wrong. I did my best. It doesn't work. Trust me."
-		ReplyText(b, chatId, msgId, reply)
+		// Don't wait for reply to start a new conversion
+		go ReplyText(b, chatId, msgId, reply)
 		return
 	}
 	if !utils.PathExist(destfn) {
-		slog.Error("impossible conversion", "fromExt", srcext, "toExt", conv.DestExt, "file", srcfn)
-		reply := fmt.Sprintf("Cannot convert %s to %s. That's witchery!", srcext, conv.DestExt)
-		ReplyText(b, chatId, msgId, reply)
+		slog.Error("impossible conversion", "fromExt", srcext, "toExt", u.DestExt, "file", srcfn)
+		reply := fmt.Sprintf("Cannot convert %s to %s. That's witchery!", srcext, u.DestExt)
+		// Don't wait for reply to start a new conversion
+		go ReplyText(b, chatId, msgId, reply)
 		return
 	}
-	defer utils.RemoveFile(destfn)
+
+	// Pass to responding
+	destDocName := strings.TrimSuffix(u.Doc.FileName, srcext) + u.DestExt
+	respCh <- RespondUpdate{FN: destfn, DocName: destDocName, Doc: u.Doc, Msg: u.Msg}
+}
+
+func handleRespond(b *bot.Bot, u *RespondUpdate) {
+	chatId := u.Msg.Chat.ID
+	msgId := u.Msg.MessageID
+
+	defer utils.RemoveFile(u.FN)
 
 	// Send document back
-	err = b.ReplyFile(chatId, msgId, destfn, destDocName)
+	err := b.ReplyFile(chatId, msgId, u.FN, u.DocName)
 	if err != nil {
-		slog.Error("could not send file", "error", err, "file", destfn, "chatId", chatId)
+		slog.Error("could not send file", "error", err, "file", u.FN, "chatId", chatId)
 		reply := "No, seriously... I converted the doc, it was ready, everything was good, but it didn't sent! What!?"
 		ReplyText(b, chatId, msgId, reply)
 		return
 	}
 
-	slog.Info("successfully converted document", "document", conv.Doc, "chatId", chatId)
+	slog.Info("successfully converted document", "document", u.Doc, "chatId", chatId)
 }
 
 func main() {
@@ -191,11 +212,21 @@ func main() {
 	fmt.Printf("Authorized on account @%s \"https://t.me/%s\"\n", bname, bname)
 
 	// Handle updates
-	convCh := make(chan ConvUpdate)
+	// CORE PIPELINE
+	// handleUpdate -> handleConvert -> handleRespond
+	convCh := make(chan ConvertUpdate)
+	respCh := make(chan RespondUpdate)
 	go func() {
-		// LO can only work syncronously
+		// When new file is ready to be responded with
+		for u := range respCh {
+			go handleRespond(b, &u)
+		}
+	}()
+	go func() {
+		// When new file is ready for conversion
 		for u := range convCh {
-			handleConvert(b, lo, &u)
+			// LO can only work syncronously
+			handleConvert(b, lo, respCh, &u)
 		}
 	}()
 	b.Handle(func(u *tgbotapi.Update) {
