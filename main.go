@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	DATA_DIR = "data"
-	LOG_FILE = ".local/state/trile/logs/trile.log"
+	LOG_LEVEL = slog.LevelInfo
+	DATA_DIR  = "data"
+	LOG_FILE  = ".local/state/trile/logs/trile.log"
 )
 
 type ConvertUpdate struct {
@@ -39,7 +40,6 @@ func ReplyText(b *bot.Bot, chatId int64, msgId int, text string) {
 	if err != nil {
 		slog.Error("could not send message", "error", err, "chatId", chatId)
 	}
-
 }
 
 func sendStartMsg(b *bot.Bot, chatId int64) {
@@ -51,6 +51,22 @@ func sendStartMsg(b *bot.Bot, chatId int64) {
 	if err != nil {
 		slog.Error("could not send message", "error", err, "chatId", chatId)
 	}
+}
+
+func getMessageDoc(m *tgbotapi.Message) *tgbotapi.Document {
+	if m == nil {
+		return nil
+	}
+	if m.Document != nil {
+		return m.Document
+	}
+	if m.ReplyToMessage == nil {
+		return nil
+	}
+	if m.ReplyToMessage.Document != nil {
+		return m.ReplyToMessage.Document
+	}
+	return nil
 }
 
 func handleUpdate(b *bot.Bot, convCh chan ConvertUpdate, u *tgbotapi.Update) {
@@ -67,15 +83,14 @@ func handleUpdate(b *bot.Bot, convCh chan ConvertUpdate, u *tgbotapi.Update) {
 		sendStartMsg(b, chatId)
 		return
 	}
-	d := m.Document
+	d := getMessageDoc(m)
 	if d == nil {
-		repMsg := m.ReplyToMessage
-		if repMsg != nil && repMsg.Document != nil {
-			d = repMsg.Document
-		} else {
+		if cmd != "" {
 			slog.Info("no document received", "chatId", chatId)
-			return
+			reply := "Where's the doc? WHERE IS MY DOC!?"
+			ReplyText(b, chatId, m.MessageID, reply)
 		}
+		return
 	}
 
 	// Path and extensions
@@ -188,7 +203,7 @@ func main() {
 	defer utils.CloseRC(logf)
 	fmt.Printf("Logs will be stored in \"%s\"\n", logfn)
 	logger := slog.New(slog.NewJSONHandler(logf,
-		&slog.HandlerOptions{Level: slog.LevelDebug}))
+		&slog.HandlerOptions{Level: LOG_LEVEL}))
 	slog.SetDefault(logger)
 
 	// Start LO instance
