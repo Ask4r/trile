@@ -56,14 +56,11 @@ func sendStartMsg(b *bot.Bot, chatId int64) {
 func getMessageDoc(m *tgbotapi.Message) *tgbotapi.Document {
 	if m == nil {
 		return nil
-	}
-	if m.Document != nil {
+	} else if m.Document != nil {
 		return m.Document
-	}
-	if m.ReplyToMessage == nil {
+	} else if m.ReplyToMessage == nil {
 		return nil
-	}
-	if m.ReplyToMessage.Document != nil {
+	} else if m.ReplyToMessage.Document != nil {
 		return m.ReplyToMessage.Document
 	}
 	return nil
@@ -73,34 +70,31 @@ func handleUpdate(b *bot.Bot, convCh chan ConvertUpdate, u *tgbotapi.Update) {
 	// Get message data
 	m := u.Message
 	if m == nil {
-		slog.Info("no message received", "update", u)
+		slog.Warn("no message received", "update", u)
 		return
 	}
 	slog.Debug("new message", "message", m)
 	chatId := m.Chat.ID
+
 	cmd := b.GetMsgCommand(m)
-	if cmd == "/start" {
+	if cmd == "" {
+		return
+	} else if cmd == "/start" {
 		sendStartMsg(b, chatId)
 		return
 	}
+
 	d := getMessageDoc(m)
 	if d == nil {
-		if cmd != "" {
-			slog.Info("no document received", "chatId", chatId)
-			reply := "Where's the doc? WHERE IS MY DOC!?"
-			ReplyText(b, chatId, m.MessageID, reply)
-		}
+		slog.Info("no document received", "chatId", chatId)
+		reply := "Where's the doc? WHERE IS MY DOC!?"
+		ReplyText(b, chatId, m.MessageID, reply)
 		return
 	}
 
-	// Path and extensions
+	// Paths and extensions
 	srcext := path.Ext(d.FileName)
-	var destext string
-	if cmd == "" {
-		destext = ".pdf"
-	} else {
-		destext = "." + strings.TrimPrefix(cmd, "/")
-	}
+	destext := "." + strings.TrimPrefix(cmd, "/")
 	if srcext == destext {
 		slog.Info("tried to convert to same file extension", "fromExt", srcext, "toExt", destext)
 		reply := fmt.Sprintf("That's %s to %s...", srcext, destext)

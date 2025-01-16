@@ -31,6 +31,9 @@ func (b *Bot) Handle(handle func(u *tgbotapi.Update)) {
 }
 
 func (b *Bot) GetMsgCommand(m *tgbotapi.Message) string {
+	if m == nil {
+		return ""
+	}
 	var text string
 	var ents []tgbotapi.MessageEntity
 	if m.Text != "" {
