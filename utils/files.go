@@ -1,10 +1,12 @@
 package utils
 
 import (
-	"errors"
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+
+	"github.com/pkg/errors"
 )
 
 func CloseRC(s io.ReadCloser) {
@@ -24,4 +26,20 @@ func RemoveFile(fn string) {
 func PathExist(path string) bool {
 	_, err := os.Stat(path)
 	return !errors.Is(err, os.ErrNotExist)
+}
+
+func CreateFilePath(path string) error {
+	err := os.MkdirAll(filepath.Dir(path), os.ModePerm)
+	if err != nil {
+		return err
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	err = f.Close()
+	if err != nil {
+		return errors.Wrap(err, "unexpected error: cannot close newly created file")
+	}
+	return nil
 }

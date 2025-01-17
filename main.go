@@ -186,9 +186,14 @@ func main() {
 		fmt.Printf("Could not create TMP dir \"%s\": %v\n", TMP_DIR, err)
 		return
 	}
+	err = utils.CreateFilePath(LOG_FILE)
+	if err != nil {
+		fmt.Printf("Cannot access LOG file \"%s\": %v\n", LOG_FILE, err)
+		return
+	}
 
 	// Init logger
-	logf, err := os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
+	logf, err := os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_APPEND, 0o666)
 	if err != nil {
 		fmt.Printf("Could not acess log file \"%s\": %v\n", LOG_FILE, err)
 		return
