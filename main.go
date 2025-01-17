@@ -17,8 +17,8 @@ import (
 
 const (
 	LOG_LEVEL = slog.LevelInfo
-	DATA_DIR  = "data"
-	LOG_FILE  = ".local/state/trile/logs/trile.log"
+	TMP_DIR   = "/var/tmp/trile-bot"
+	LOG_FILE  = "/var/log/trile-bot/trile.log"
 )
 
 type ConvertUpdate struct {
@@ -101,7 +101,7 @@ func handleUpdate(b *bot.Bot, convCh chan ConvertUpdate, u *tgbotapi.Update) {
 		ReplyText(b, chatId, m.MessageID, reply)
 		return
 	}
-	fn := DATA_DIR + "/" + hash.NowString() + srcext
+	fn := TMP_DIR + "/" + hash.NowString() + srcext
 
 	// Fetch document
 	err := b.FetchDoc(d, fn)
@@ -128,7 +128,7 @@ func handleConvert(b *bot.Bot, lo *convert.LOConv, respCh chan RespondUpdate, u 
 
 	// Convert document
 	loTarget := strings.TrimPrefix(u.DestExt, ".")
-	err := lo.OfficeToExt(srcfn, DATA_DIR, loTarget)
+	err := lo.OfficeToExt(srcfn, TMP_DIR, loTarget)
 	if err != nil {
 		slog.Error("could not convert file", "error", err, "file", srcfn)
 		reply := "Something definetly went wrong. I did my best. It doesn't work. Trust me."
@@ -168,10 +168,8 @@ func handleRespond(b *bot.Bot, u *RespondUpdate) {
 }
 
 func main() {
-	var err error
-
-	// Retrieve Env data
-	err = godotenv.Load()
+	// Get env
+	err := godotenv.Load()
 	if err != nil {
 		fmt.Printf("Cannot read .env: %v\n", err)
 		return
@@ -182,20 +180,20 @@ func main() {
 		return
 	}
 
-	// Init logger
-	homedir, err := os.UserHomeDir()
+	// Setup
+	err = os.MkdirAll(TMP_DIR, os.ModePerm)
 	if err != nil {
-		fmt.Printf("Cannot use log file: cannot retrieve HOME dir: %v\n", err)
+		fmt.Printf("Could not create TMP dir \"%s\": %v\n", TMP_DIR, err)
 		return
 	}
-	logfn := path.Join(homedir, LOG_FILE)
-	logf, err := os.OpenFile(logfn, os.O_WRONLY|os.O_APPEND, 0o666)
+
+	// Init logger
+	logf, err := os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
 	if err != nil {
-		fmt.Printf("Could not acess log file: %v\n", err)
+		fmt.Printf("Could not acess log file \"%s\": %v\n", LOG_FILE, err)
 		return
 	}
 	defer utils.CloseRC(logf)
-	fmt.Printf("Logs will be stored in \"%s\"\n", logfn)
 	logger := slog.New(slog.NewJSONHandler(logf,
 		&slog.HandlerOptions{Level: LOG_LEVEL}))
 	slog.SetDefault(logger)
