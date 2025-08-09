@@ -8,17 +8,12 @@ import (
 	"strings"
 
 	"github.com/ask4r/trile/bot"
+	"github.com/ask4r/trile/cli"
 	"github.com/ask4r/trile/convert"
 	"github.com/ask4r/trile/hash"
 	"github.com/ask4r/trile/utils"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
-)
-
-const (
-	LOG_LEVEL = slog.LevelInfo
-	TMP_DIR   = "/var/tmp/trile-bot"
-	LOG_FILE  = "/var/log/trile-bot/trile.log"
 )
 
 type ConvertUpdate struct {
@@ -66,7 +61,7 @@ func getMessageDoc(m *tgbotapi.Message) *tgbotapi.Document {
 	return nil
 }
 
-func handleUpdate(b *bot.Bot, convCh chan ConvertUpdate, u *tgbotapi.Update) {
+func handleUpdate(b *bot.Bot, convCh chan ConvertUpdate, u *tgbotapi.Update, tmp_dir string) {
 	// Get message data
 	m := u.Message
 	if m == nil {
@@ -101,7 +96,7 @@ func handleUpdate(b *bot.Bot, convCh chan ConvertUpdate, u *tgbotapi.Update) {
 		ReplyText(b, chatId, m.MessageID, reply)
 		return
 	}
-	fn := TMP_DIR + "/" + hash.NowString() + srcext
+	fn := tmp_dir + "/" + hash.NowString() + srcext
 
 	// Fetch document
 	err := b.FetchDoc(d, fn)
@@ -128,7 +123,7 @@ func handleConvert(b *bot.Bot, lo *convert.LOConv, respCh chan RespondUpdate, u 
 
 	// Convert document
 	loTarget := strings.TrimPrefix(u.DestExt, ".")
-	err := lo.OfficeToExt(srcfn, TMP_DIR, loTarget)
+	err := lo.OfficeToExt(srcfn, loTarget)
 	if err != nil {
 		slog.Error("could not convert file", "error", err, "file", srcfn)
 		reply := "Something definetly went wrong. I did my best. It doesn't work. Trust me."
@@ -180,31 +175,53 @@ func main() {
 		return
 	}
 
-	// Setup
-	err = os.MkdirAll(TMP_DIR, os.ModePerm)
+	args, err := cli.Parse()
 	if err != nil {
-		fmt.Printf("Could not create TMP dir \"%s\": %v\n", TMP_DIR, err)
+		fmt.Printf("Args error: \"%v\"", err)
 		return
 	}
-	err = utils.CreateFilePath(LOG_FILE)
+
+	// Setup
+	err = os.MkdirAll(*args.TmpDir, os.ModePerm)
 	if err != nil {
-		fmt.Printf("Cannot access LOG file \"%s\": %v\n", LOG_FILE, err)
+		fmt.Printf("Could not create TMP dir \"%s\": %v\n", *args.TmpDir, err)
+		return
+	}
+	err = utils.CreateFilePath(*args.LogFile)
+	if err != nil {
+		fmt.Printf("Cannot access LOG file \"%s\": %v\n", *args.LogFile, err)
 		return
 	}
 
 	// Init logger
-	logf, err := os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_APPEND, 0o666)
-	if err != nil {
-		fmt.Printf("Could not acess log file \"%s\": %v\n", LOG_FILE, err)
-		return
+	var log_level slog.Level
+	switch *args.LogLevel {
+	case "debug":
+		log_level = slog.LevelDebug
+	case "info":
+		log_level = slog.LevelDebug
+	case "warn":
+		log_level = slog.LevelDebug
+	case "error":
+		log_level = slog.LevelDebug
 	}
-	defer utils.CloseRC(logf)
-	logger := slog.New(slog.NewJSONHandler(logf,
-		&slog.HandlerOptions{Level: LOG_LEVEL}))
+	var log_file *os.File
+	if *args.LogFile == "stdout" {
+		log_file = os.Stdout
+	} else {
+		log_file, err := os.OpenFile(*args.LogFile, os.O_WRONLY|os.O_APPEND, 0o666)
+		if err != nil {
+			fmt.Printf("Could not acess log file \"%s\": %v\n", *args.LogFile, err)
+			return
+		}
+		defer utils.CloseRC(log_file)
+	}
+	logger := slog.New(slog.NewJSONHandler(log_file,
+		&slog.HandlerOptions{Level: log_level}))
 	slog.SetDefault(logger)
 
 	// Start LO instance
-	lo, err := convert.New()
+	lo, err := convert.New(*args.TmpDir)
 	if err != nil {
 		fmt.Printf("Could not start LO: %v\n", err)
 		return
@@ -242,6 +259,6 @@ func main() {
 		}
 	}()
 	b.Handle(func(u *tgbotapi.Update) {
-		go handleUpdate(b, convCh, u)
+		go handleUpdate(b, convCh, u, *args.TmpDir)
 	})
 }

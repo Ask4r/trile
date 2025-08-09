@@ -15,7 +15,8 @@ const (
 )
 
 type LOConv struct {
-	pid int // -1 if no instance is running yet
+	pid     int // -1 if no instance is running yet
+	tmp_dir string
 }
 
 func (lo *LOConv) checkInstance() error {
@@ -30,7 +31,7 @@ func (lo *LOConv) checkInstance() error {
 // are sent to single background instance to avoid
 // startup/shutdown penalty for speed (primary) and
 // safety (secondary) purposes
-func New() (*LOConv, error) {
+func New(tmp_dir string) (*LOConv, error) {
 	cmd := exec.Command(loExec,
 		"--nodefault",
 		"--headless",
@@ -44,7 +45,7 @@ func New() (*LOConv, error) {
 	}
 
 	pid := cmd.Process.Pid
-	return &LOConv{pid: pid}, nil
+	return &LOConv{pid, tmp_dir}, nil
 }
 
 func (lo *LOConv) Shutdown() error {
@@ -61,7 +62,7 @@ func (lo *LOConv) Shutdown() error {
 	return nil
 }
 
-func (lo *LOConv) OfficeToExt(fn, outdir, ext string) error {
+func (lo *LOConv) OfficeToExt(fn, ext string) error {
 	err := lo.checkInstance()
 	if err != nil {
 		return errors.Wrap(err, "cannot convert file")
@@ -69,7 +70,7 @@ func (lo *LOConv) OfficeToExt(fn, outdir, ext string) error {
 
 	cmd := exec.Command(loExec,
 		"--convert-to", mapExt(ext), fn,
-		"--outdir", outdir,
+		"--outdir", lo.tmp_dir,
 		"-env:UserInstallation=file://"+loIsolatedEnvFile)
 	// err = cmd.Start()
 	err = cmd.Run()
