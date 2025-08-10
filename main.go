@@ -9,9 +9,15 @@ import (
 	"github.com/ask4r/trile/domains/converter"
 	"github.com/ask4r/trile/lib/files"
 	"github.com/ask4r/trile/pipelines/convert"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load config
+	err := godotenv.Load()
+	if err != nil {
+		// Nothing is wrong actually. Variables may be defined in the environment.
+	}
 	conf, err := LoadConfig()
 	if err != nil {
 		fmt.Printf("Config load error: \"%v\"", err)

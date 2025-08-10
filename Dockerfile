@@ -13,8 +13,5 @@ FROM ubuntu:latest AS libreoffice
         rm -rf /var/lib/apt/lists/*
 
     COPY --from=build /app/trile /app/trile
-    COPY --from=build /app/.env /app/.env
 
-    WORKDIR /app
-
-    CMD ["./trile", "--log-file=stdout"]
+    CMD ["/app/trile", "--log-file=stdout"]
