@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/ask4r/trile/utils"
+	"github.com/ask4r/trile/lib/files"
 	"github.com/pkg/errors"
 )
 
@@ -27,13 +27,13 @@ func ToFile(fn, url string) error {
 	if err != nil {
 		return errors.Wrap(err, "could not create file")
 	}
-	defer utils.CloseRC(f)
+	defer files.CloseRC(f)
 
 	r, err := ToStream(url)
 	if err != nil {
 		return err
 	}
-	defer utils.CloseRC(r)
+	defer files.CloseRC(r)
 
 	_, err = io.Copy(f, r)
 	if err != nil {

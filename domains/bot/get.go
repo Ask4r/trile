@@ -2,10 +2,8 @@ package bot
 
 import (
 	"io"
-	"os"
 
-	"github.com/ask4r/trile/fetch"
-	"github.com/ask4r/trile/utils"
+	"github.com/ask4r/trile/lib/fetch"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/pkg/errors"
 )
@@ -41,17 +39,4 @@ func (b *Bot) GetDocStream(d *tgbotapi.Document) (io.ReadCloser, error) {
 		return nil, errors.Wrap(err, "could not obtain doc stream")
 	}
 	return r, nil
-}
-
-func loadFileBytes(fn, docname string) (*tgbotapi.FileBytes, error) {
-	f, err := os.Open(fn)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not open file")
-	}
-	defer utils.CloseRC(f)
-	bytes, err := io.ReadAll(f)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not read file")
-	}
-	return &tgbotapi.FileBytes{Name: docname, Bytes: bytes}, nil
 }

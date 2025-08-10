@@ -1,4 +1,4 @@
-package convert
+package converter
 
 import (
 	"os/exec"
@@ -14,12 +14,12 @@ const (
 	loAcceptStr       = "socket,host=127.0.0.1,port=2003,tcpNoDelay=1;urp;StarOffice.ComponentContext"
 )
 
-type LOConv struct {
+type Converter struct {
 	pid     int // -1 if no instance is running yet
 	tmp_dir string
 }
 
-func (lo *LOConv) checkInstance() error {
+func (lo *Converter) checkInstance() error {
 	if lo.pid == -1 {
 		return errors.New("no running LibreOffice instance")
 	}
@@ -31,7 +31,7 @@ func (lo *LOConv) checkInstance() error {
 // are sent to single background instance to avoid
 // startup/shutdown penalty for speed (primary) and
 // safety (secondary) purposes
-func New(tmp_dir string) (*LOConv, error) {
+func New(tmp_dir string) (*Converter, error) {
 	cmd := exec.Command(loExec,
 		"--nodefault",
 		"--headless",
@@ -45,10 +45,10 @@ func New(tmp_dir string) (*LOConv, error) {
 	}
 
 	pid := cmd.Process.Pid
-	return &LOConv{pid, tmp_dir}, nil
+	return &Converter{pid, tmp_dir}, nil
 }
 
-func (lo *LOConv) Shutdown() error {
+func (lo *Converter) Shutdown() error {
 	err := lo.checkInstance()
 	if err != nil {
 		return errors.Wrap(err, "cannot shutdown LO")
@@ -62,7 +62,7 @@ func (lo *LOConv) Shutdown() error {
 	return nil
 }
 
-func (lo *LOConv) OfficeToExt(fn, ext string) error {
+func (lo *Converter) OfficeToExt(fn, ext string) error {
 	err := lo.checkInstance()
 	if err != nil {
 		return errors.Wrap(err, "cannot convert file")
