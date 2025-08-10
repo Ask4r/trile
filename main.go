@@ -67,6 +67,7 @@ func main() {
 	b, err := bot.New(conf.BotApiKey)
 	if err != nil {
 		fmt.Printf("Could not create bot: %v\n", err)
+		return
 	}
 	bname := b.API.Self.UserName
 	fmt.Printf("Authorized on account @%s \"https://t.me/%s\"\n", bname, bname)
